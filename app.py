@@ -14,13 +14,14 @@ from google import genai
 from io import BytesIO
 import base64
 import io
-import math
+import os
 
 # ==========================================
 # 1. SYSTEM CONFIGURATION & INITIALIZATION
 # ==========================================
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE, "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap"], suppress_callback_exceptions=True)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.SLATE, "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap"], suppress_callback_exceptions=True)
 app.title = "Omaha Baseball Analytics"
+server = app.server
 
 DB_NAME = "trackman_master.db"
 
@@ -35,7 +36,8 @@ def init_db():
             TaggedPitchType TEXT, ExitSpeed REAL, Angle REAL, Direction REAL, Distance REAL, HitSpinRate REAL, HangTime REAL,
             PlateLocHeight REAL, PlateLocSide REAL, ContactPositionX REAL, ContactPositionY REAL, ContactPositionZ REAL,
             PitchCall TEXT, PlayResult TEXT, TaggedHitType TEXT, KorBB TEXT,
-            Balls INTEGER, Strikes INTEGER, RelSpeed REAL, InducedVertBreak REAL, HorzBreak REAL, VertApprAngle REAL
+            Balls INTEGER, Strikes INTEGER, RelSpeed REAL, InducedVertBreak REAL, HorzBreak REAL, VertApprAngle REAL,
+            UploadTimestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
@@ -127,24 +129,34 @@ def get_full_batting_line(df):
 # ==========================================
 def render_3d_stadium(df):
     fig = go.Figure()
-    grass_material = dict(ambient=0.6, diffuse=0.8, roughness=0.9, specular=0.1)
-    dirt_material = dict(ambient=0.7, diffuse=0.7, roughness=1.0, specular=0.0)
+    grass_material = dict(ambient=0.7, diffuse=0.8, roughness=0.9, specular=0.1)
+    dirt_material = dict(ambient=0.8, diffuse=0.7, roughness=1.0, specular=0.0)
 
+    # Outfield Grass Striping
     theta_arc = np.linspace(-np.pi/4, np.pi/4, 150)
     for r in range(150, 401, 25):
         x_out, y_out = r * np.sin(theta_arc), r * np.cos(theta_arc)
         x_in, y_in = (r-25) * np.sin(theta_arc[::-1]), (r-25) * np.cos(theta_arc[::-1])
-        stripe_color = '#2E7D32' if (r//25)%2 == 0 else '#388E3C'
+        stripe_color = '#15803d' if (r//25)%2 == 0 else '#166534'
         fig.add_trace(go.Mesh3d(x=np.concatenate([x_out, x_in, [x_out[0]]]), y=np.concatenate([y_out, y_in, [y_out[0]]]), z=np.zeros(301), color=stripe_color, lighting=grass_material, hoverinfo='skip', showlegend=False))
         
+    # Infield Dirt
     theta_full = np.linspace(0, 2*np.pi, 50)
     fig.add_trace(go.Mesh3d(x=np.concatenate([[0], 145 * np.sin(np.linspace(-np.pi/4, np.pi/4, 50)), [0]]), y=np.concatenate([[0], 145 * np.cos(np.linspace(-np.pi/4, np.pi/4, 50)), [0]]), z=np.full(52, 0.1), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Mesh3d(x=13*np.sin(theta_full), y=13*np.cos(theta_full), z=np.full(50, 0.15), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
     fig.add_trace(go.Mesh3d(x=9*np.sin(theta_full), y=60.5 + 9*np.cos(theta_full), z=np.full(50, 0.15), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
 
+    # Warning Track & Sleek Outfield Wall
     fig.add_trace(go.Mesh3d(x=np.concatenate([400 * np.sin(theta_arc), 385 * np.sin(theta_arc[::-1]), [400 * np.sin(theta_arc[0])]]), y=np.concatenate([400 * np.cos(theta_arc), 385 * np.cos(theta_arc[::-1]), [400 * np.cos(theta_arc[0])]]), z=np.full(301, 0.2), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter3d(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), z=np.full(150, 10), mode='lines', surfaceaxis=2, surfacecolor='#0F172A', line=dict(width=5, color='#D71920'), hoverinfo='skip', showlegend=False))
+    
+    # NEW Translucent Outfield Wall (No black center-field chunk)
+    wall_x = np.concatenate([400 * np.sin(theta_arc), 400 * np.sin(theta_arc[::-1])])
+    wall_y = np.concatenate([400 * np.cos(theta_arc), 400 * np.cos(theta_arc[::-1])])
+    wall_z = np.concatenate([np.zeros(150), np.full(150, 10)])
+    fig.add_trace(go.Mesh3d(x=wall_x, y=wall_y, z=wall_z, color='rgba(15, 23, 42, 0.6)', alphahull=0, hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter3d(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), z=np.full(150, 10), mode='lines', line=dict(color='#D71920', width=5), hoverinfo='skip', showlegend=False))
 
+    # Base Paths & Lines
     fig.add_trace(go.Scatter3d(x=[63.6, 0, -63.6], y=[63.6, 127.2, 63.6], z=[0.3, 0.3, 0.3], mode='markers', marker=dict(color='white', size=5, symbol='square'), hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter3d(x=[0, 283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=3), hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter3d(x=[0, -283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=3), hoverinfo='skip', showlegend=False))
@@ -161,9 +173,9 @@ def render_3d_stadium(df):
             
             color = '#D71920' if (ev >= 95 and 8 <= angle <= 32) else '#3B82F6' if ev >= 90 else '#94A3B8'
             
-            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=z_traj, mode='lines', line=dict(color=color, width=5), hovertemplate=f"<b>EV:</b> {ev:.1f} mph<br><b>LA:</b> {angle:.1f}°<br><b>Dist:</b> {dist:.0f} ft<extra></extra>", showlegend=False))
-            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.3)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
-            fig.add_trace(go.Scatter3d(x=[x_end], y=[y_end], z=[0.3], mode='markers', marker=dict(color=color, size=6, line=dict(color='white', width=1)), hoverinfo='skip', showlegend=False))
+            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=z_traj, mode='lines', line=dict(color=color, width=4), hovertemplate=f"<b>EV:</b> {ev:.1f} mph<br><b>LA:</b> {angle:.1f}°<br><b>Dist:</b> {dist:.0f} ft<extra></extra>", showlegend=False))
+            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.2)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
+            fig.add_trace(go.Scatter3d(x=[x_end], y=[y_end], z=[0.3], mode='markers', marker=dict(color=color, size=5, line=dict(color='white', width=1)), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
         scene=dict(xaxis=dict(range=[-300, 300], visible=False), yaxis=dict(range=[-20, 450], visible=False), zaxis=dict(range=[0, 150], visible=False), aspectmode='manual', aspectratio=dict(x=1.3, y=1.3, z=0.35), camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0, y=-1.8, z=0.6))),
@@ -194,7 +206,7 @@ def render_3d_strikezone(df):
                 hovertemplate="<b style='color:#0F172A'>EV: %{marker.color:.1f} mph</b><br>Side (X): %{x:.2f} ft<br>Depth (Y): %{y:.2f} ft<br>Height (Z): %{z:.2f} ft<extra></extra>",
                 name='Contact'
             ))
-            fig.add_trace(go.Scatter3d(x=valid_cp['PlateLocSide'], y=valid_cp[depth_col], z=np.zeros(len(valid_cp)), mode='markers', marker=dict(color='rgba(0,0,0,0.2)', size=5), hoverinfo='skip', showlegend=False))
+            fig.add_trace(go.Scatter3d(x=valid_cp['PlateLocSide'], y=valid_cp[depth_col], z=np.zeros(len(valid_cp)), mode='markers', marker=dict(color='rgba(0,0,0,0.15)', size=5), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
         scene=dict(xaxis=dict(title='Side (ft)', range=[-2.5, 2.5], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), yaxis=dict(title='Depth (ft)', range=[-1, 3], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), zaxis=dict(title='Height (ft)', range=[0, 4.5], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), aspectmode='manual', aspectratio=dict(x=1.2, y=1.2, z=0.9), camera=dict(eye=dict(x=1.2, y=-1.5, z=0.8))),
@@ -202,7 +214,7 @@ def render_3d_strikezone(df):
     )
     return fig
 
-def create_wedge_polygon(r_inner, r_outer, theta1, theta2, num_points=30):
+def create_wedge_polygon(r_inner, r_outer, theta1, theta2, num_points=40):
     t1_rad, t2_rad = np.radians(theta1), np.radians(theta2)
     theta_vals = np.linspace(t1_rad, t2_rad, num_points)
     x_outer = r_outer * np.sin(theta_vals)
@@ -215,10 +227,10 @@ def render_2d_field_heatmap(df, metric='ExitSpeed'):
     fig = go.Figure()
     
     theta_arc = np.linspace(-np.pi/4, np.pi/4, 100)
-    fig.add_trace(go.Scatter(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), mode='lines', line=dict(color='black', width=2), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter(x=[0, 400*np.sin(np.pi/4)], y=[0, 400*np.cos(np.pi/4)], mode='lines', line=dict(color='black', width=2), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter(x=[0, 400*np.sin(-np.pi/4)], y=[0, 400*np.cos(-np.pi/4)], mode='lines', line=dict(color='black', width=2), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter(x=180 * np.sin(theta_arc), y=180 * np.cos(theta_arc), mode='lines', line=dict(color='gray', width=1, dash='dash'), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), mode='lines', line=dict(color='#64748B', width=2), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=[0, 400*np.sin(np.pi/4)], y=[0, 400*np.cos(np.pi/4)], mode='lines', line=dict(color='#64748B', width=2), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=[0, 400*np.sin(-np.pi/4)], y=[0, 400*np.cos(-np.pi/4)], mode='lines', line=dict(color='#64748B', width=2), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=180 * np.sin(theta_arc), y=180 * np.cos(theta_arc), mode='lines', line=dict(color='#94A3B8', width=2, dash='dash'), hoverinfo='skip', showlegend=False))
 
     zones = {
         'IF_LL': {'r': (0, 180), 't': (-45, -22.5)}, 'IF_LC': {'r': (0, 180), 't': (-22.5, 0)},
@@ -236,29 +248,29 @@ def render_2d_field_heatmap(df, metric='ExitSpeed'):
 
     for z, params in zones.items():
         val = avgs.get(z, np.nan)
-        color = 'rgba(241, 245, 249, 0.6)' 
+        color = 'rgba(241, 245, 249, 0.4)' 
         text_val = "N/A"
         if not pd.isna(val):
             rgba = cmap(norm(val))
-            color = f'rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.85)'
+            color = f'rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.9)'
             text_val = f"{val:.1f}{' mph' if metric == 'ExitSpeed' else '°'}"
 
         x_pts, y_pts = create_wedge_polygon(params['r'][0], params['r'][1], params['t'][0], params['t'][1])
-        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, fill='toself', fillcolor=color, mode='lines', line=dict(color='white', width=1), hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, fill='toself', fillcolor=color, mode='lines', line=dict(color='white', width=1.5), hoverinfo='skip', showlegend=False))
         
         mid_r = params['r'][0] + (params['r'][1] - params['r'][0])/2
         mid_t = np.radians(params['t'][0] + (params['t'][1] - params['t'][0])/2)
-        fig.add_trace(go.Scatter(x=[mid_r * np.sin(mid_t)], y=[mid_r * np.cos(mid_t)], mode='text', text=[text_val], textfont=dict(color='black', size=14, family='Inter', weight='bold'), hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter(x=[mid_r * np.sin(mid_t)], y=[mid_r * np.cos(mid_t)], mode='text', text=[text_val], textfont=dict(color='black', size=15, family='Inter', weight='900'), hoverinfo='skip', showlegend=False))
 
-    fig.update_layout(xaxis=dict(visible=False, range=[-300, 300]), yaxis=dict(visible=False, range=[-20, 420], scaleanchor='x', scaleratio=1), margin=dict(l=0, r=0, b=0, t=30), title=dict(text=f"Average {metric} by Field Quadrant", font=dict(size=18, family='Inter', color='#0F172A')), paper_bgcolor='white', plot_bgcolor='white')
+    fig.update_layout(xaxis=dict(visible=False, range=[-300, 300]), yaxis=dict(visible=False, range=[-20, 420], scaleanchor='x', scaleratio=1), margin=dict(l=0, r=0, b=0, t=40), title=dict(text=f"AVERAGE {metric.upper() if metric == 'ExitSpeed' else 'LAUNCH ANGLE'} BY FIELD QUADRANT", font=dict(size=14, family='Inter', weight='bold', color='#0F172A'), x=0.5, y=0.95), paper_bgcolor='white', plot_bgcolor='white')
     return fig
 
 def render_2d_sz_heatmap(df, metric='ExitSpeed'):
     fig = go.Figure()
     
     plate_x, plate_y = [-0.708, 0.708, 0.708, 0, -0.708, -0.708], [0, 0, 0.25, 0.5, 0.25, 0]
-    fig.add_trace(go.Scatter(x=plate_x, y=plate_y, mode='lines', fill='toself', fillcolor='white', line=dict(color='black', width=2), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter(x=[-0.833, 0.833, 0.833, -0.833, -0.833], y=[1.5, 1.5, 3.5, 3.5, 1.5], mode='lines', line=dict(color='black', width=3), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=plate_x, y=plate_y, mode='lines', fill='toself', fillcolor='white', line=dict(color='#0F172A', width=2), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter(x=[-0.833, 0.833, 0.833, -0.833, -0.833], y=[1.5, 1.5, 3.5, 3.5, 1.5], mode='lines', line=dict(color='#0F172A', width=3), hoverinfo='skip', showlegend=False))
 
     sz_rects = {
         'Z1': {'x': -0.833, 'y': 2.833, 'w': 0.556, 'h': 0.667}, 'Z2': {'x': -0.277, 'y': 2.833, 'w': 0.554, 'h': 0.667}, 'Z3': {'x': 0.277, 'y': 2.833, 'w': 0.556, 'h': 0.667},
@@ -282,16 +294,16 @@ def render_2d_sz_heatmap(df, metric='ExitSpeed'):
         text_val = "N/A"
         if not pd.isna(val):
             rgba = cmap(norm(val))
-            color = f'rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.9)'
+            color = f'rgba({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)}, 0.95)'
             text_val = f"{val:.1f}"
 
         x_pts = [r['x'], r['x']+r['w'], r['x']+r['w'], r['x'], r['x']]
         y_pts = [r['y'], r['y'], r['y']+r['h'], r['y']+r['h'], r['y']]
         line_color = 'white' if z.startswith('Z') else 'rgba(0,0,0,0)'
-        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, fill='toself', fillcolor=color, mode='lines', line=dict(color=line_color, width=1), hoverinfo='skip', showlegend=False))
-        fig.add_trace(go.Scatter(x=[r['x']+r['w']/2], y=[r['y']+r['h']/2], mode='text', text=[text_val], textfont=dict(color='black', size=12 if z.startswith('Z') else 9, family='Inter', weight='bold'), hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter(x=x_pts, y=y_pts, fill='toself', fillcolor=color, mode='lines', line=dict(color=line_color, width=2), hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter(x=[r['x']+r['w']/2], y=[r['y']+r['h']/2], mode='text', text=[text_val], textfont=dict(color='black', size=16 if z.startswith('Z') else 11, family='Inter', weight='900'), hoverinfo='skip', showlegend=False))
 
-    fig.update_layout(xaxis=dict(visible=False, range=[-2, 2]), yaxis=dict(visible=False, range=[0, 4.5], scaleanchor='x', scaleratio=1), margin=dict(l=0, r=0, b=0, t=30), title=dict(text=f"Average {metric} by Pitch Location", font=dict(size=18, family='Inter', color='#0F172A')), paper_bgcolor='white', plot_bgcolor='white')
+    fig.update_layout(xaxis=dict(visible=False, range=[-2, 2]), yaxis=dict(visible=False, range=[0, 4.5], scaleanchor='x', scaleratio=1), margin=dict(l=0, r=0, b=0, t=40), title=dict(text=f"AVERAGE {metric.upper() if metric == 'ExitSpeed' else 'LAUNCH ANGLE'} BY PITCH LOCATION", font=dict(size=14, family='Inter', weight='bold', color='#0F172A'), x=0.5, y=0.95), paper_bgcolor='white', plot_bgcolor='white')
     return fig
 
 # ==========================================
@@ -302,7 +314,7 @@ def generate_pdf_buffer(df, kpis, player_name, side, date_str):
     fig.patches.append(Rectangle((0.015, 0.015), 0.97, 0.97, fill=False, edgecolor='#0F172A', lw=2, transform=fig.transFigure))
     fig.text(0.04, 0.94, f"{player_name.upper()}", fontsize=28, fontweight='900', color='#0F172A')
     fig.text(0.35, 0.94, f"|  {side}", fontsize=26, fontweight='300', color='#D71920')
-    fig.text(0.04, 0.91, f"OMAHA EXECUTIVE ANALYTICS • FILTERS APPLIED: {date_str}", fontsize=12, color='#64748B', fontweight='bold')
+    fig.text(0.04, 0.91, f"OMAHA EXECUTIVE ANALYTICS • CONTEXT: {date_str}", fontsize=12, color='#64748B', fontweight='bold')
     fig.add_artist(plt.Line2D((0.04, 0.89), (0.89, 0.89), color='#E2E8F0', linewidth=2))
 
     box_width = 0.085 
@@ -380,30 +392,23 @@ def generate_pdf_buffer(df, kpis, player_name, side, date_str):
 # ==========================================
 # 5. DASH UI LAYOUT
 # ==========================================
-SIDEBAR_STYLE = { "position": "fixed", "top": 0, "left": 0, "bottom": 0, "width": "22rem", "padding": "2rem 1rem", "background-color": "#0F172A", "color": "white", "overflowY": "auto"}
-CONTENT_STYLE = { "margin-left": "23rem", "padding": "2rem", "background-color": "#F1F5F9", "min-height": "100vh"}
+SIDEBAR_STYLE = { "position": "fixed", "top": 0, "left": 0, "bottom": 0, "width": "22rem", "padding": "2rem 1.5rem", "background-color": "#0F172A", "color": "white", "overflowY": "auto"}
+CONTENT_STYLE = { "margin-left": "23rem", "padding": "2rem", "background-color": "#F8FAFC", "min-height": "100vh"}
 
 sidebar = html.Div([
     html.Img(src="https://upload.wikimedia.org/wikipedia/en/thumb/0/01/Omaha_Mavericks_logo.svg/1200px-Omaha_Mavericks_logo.svg.png", style={"width": "140px", "display": "block", "margin": "0 auto 30px auto"}),
-    html.H5("Data Ingestion", style={"color": "#94A3B8", "fontSize": "13px", "textTransform": "uppercase", "letterSpacing": "1px", "marginBottom": "10px"}),
     
-    dbc.Select(id="upload-session-type", options=[{"label": "BP Session", "value": "BP"}, {"label": "Game", "value": "Game"}, {"label": "Scrimmage", "value": "Scrimmage"}], placeholder="Select Session Type...", style={"marginBottom": "10px"}),
-    dbc.Input(id="upload-season", placeholder="Season (e.g., 2026 Spring)...", style={"marginBottom": "10px"}),
-    dbc.Input(id="upload-opponent", placeholder="Opponent Name...", style={"marginBottom": "15px"}),
+    html.H5("Performance Filters", style={"color": "#94A3B8", "fontSize": "13px", "textTransform": "uppercase", "letterSpacing": "1px", "marginBottom": "15px", "fontWeight": "bold"}),
     
-    dcc.Upload(id='upload-data', children=html.Div(['Drop CSV or ', html.A('Select File')]), style={'width': '100%', 'height': '50px', 'lineHeight': '50px', 'borderWidth': '1px', 'borderStyle': 'dashed', 'borderColor': '#D71920', 'borderRadius': '8px', 'textAlign': 'center', 'marginBottom': '10px', 'cursor': 'pointer', 'fontSize': '14px'}),
-    html.Div(id='upload-output', style={"color": "#4ADE80", "fontSize": "12px", "marginBottom": "20px"}),
+    html.Label("Hitter Profile", style={"fontSize": "12px", "fontWeight": "600"}),
+    dcc.Dropdown(id='hitter-dropdown', style={"color": "black", "marginBottom": "15px"}),
     
-    html.Hr(style={"borderColor": "#334155"}),
-    
-    html.H5("Advanced Filters", style={"color": "#94A3B8", "fontSize": "13px", "textTransform": "uppercase", "letterSpacing": "1px", "marginBottom": "10px"}),
-    html.Label("Hitter Profile", style={"fontSize": "12px"}),
-    dcc.Dropdown(id='hitter-dropdown', style={"color": "black", "marginBottom": "10px"}),
-    html.Label("Date Range", style={"fontSize": "12px"}),
-    dcc.Dropdown(id='date-dropdown', style={"color": "black", "marginBottom": "10px"}),
+    html.Label("Date Range", style={"fontSize": "12px", "fontWeight": "600"}),
+    dcc.Dropdown(id='date-dropdown', style={"color": "black", "marginBottom": "15px"}),
     
     dbc.Accordion([
         dbc.AccordionItem([
+            html.Label("Session Type", style={"fontSize": "12px"}),
             dbc.Checklist(id="filter-session", options=[], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
             html.Label("Opponent", style={"fontSize": "12px"}),
             dbc.Checklist(id="filter-opponent", options=[], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
@@ -411,7 +416,7 @@ sidebar = html.Div([
             dbc.Checklist(id="filter-hand", options=[{"label": "Vs. RHP", "value": "Right"}, {"label": "Vs. LHP", "value": "Left"}], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
             html.Label("Pitch Type", style={"fontSize": "12px"}),
             dbc.Checklist(id="filter-pitch", options=[], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
-        ], title="Situational & Game Context", style={"backgroundColor": "#1E293B", "border": "none"}),
+        ], title="Situational Context", style={"backgroundColor": "#1E293B", "border": "none", "color": "white"}),
         dbc.AccordionItem([
             html.Label("Play Result", style={"fontSize": "12px"}),
             dcc.Dropdown(id="filter-result", options=[], multi=True, style={"color": "black", "marginBottom": "10px"}),
@@ -419,12 +424,8 @@ sidebar = html.Div([
             dcc.Dropdown(id="filter-call", options=[], multi=True, style={"color": "black", "marginBottom": "10px"}),
             html.Label("Count", style={"fontSize": "12px"}),
             dcc.Dropdown(id="filter-count", options=[{"label": f"{b}-{s}", "value": f"{b}-{s}"} for b in range(4) for s in range(3)], multi=True, style={"color": "black", "marginBottom": "10px"}),
-        ], title="Results & Counts", style={"backgroundColor": "#1E293B", "border": "none"})
+        ], title="Results & Counts", style={"backgroundColor": "#1E293B", "border": "none", "color": "white"})
     ], start_collapsed=True, style={"marginBottom": "20px"}),
-    
-    html.Hr(style={"borderColor": "#334155"}),
-    html.H5("API Configuration", style={"color": "#94A3B8", "fontSize": "13px", "textTransform": "uppercase", "letterSpacing": "1px"}),
-    dbc.Input(id="gemini-key", type="password", placeholder="Gemini API Key...", style={"marginBottom": "20px"}),
 ], style=SIDEBAR_STYLE)
 
 main_content = html.Div([
@@ -433,16 +434,12 @@ main_content = html.Div([
     
     dbc.Tabs([
         dbc.Tab(html.Div([
-            dbc.Row([
-                dbc.Col(dcc.Graph(id='3d-stadium-graph', style={"height": "750px"}), width=12)
-            ])
-        ], style={"padding": "20px"}), label="🌐 3D Field Engine", tab_style={"backgroundColor": "#E2E8F0"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold"}),
+            dbc.Row([dbc.Col(dcc.Graph(id='3d-stadium-graph', style={"height": "750px"}), width=12)])
+        ], style={"padding": "20px"}), label="🌐 Interactive Spray Chart", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
         
         dbc.Tab(html.Div([
-            dbc.Row([
-                dbc.Col(dcc.Graph(id='3d-strikezone-graph', style={"height": "750px"}), width=12)
-            ])
-        ], style={"padding": "20px"}), label="⚾ 3D Strike Zone", tab_style={"backgroundColor": "#E2E8F0"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold"}),
+            dbc.Row([dbc.Col(dcc.Graph(id='3d-strikezone-graph', style={"height": "750px"}), width=12)])
+        ], style={"padding": "20px"}), label="⚾ 3D Strike Zone", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
         
         dbc.Tab(html.Div([
             dbc.Row([
@@ -453,31 +450,56 @@ main_content = html.Div([
                 dbc.Col(dcc.Graph(id='2d-ev-sz', style={"height": "600px"}), width=6),
                 dbc.Col(dcc.Graph(id='2d-la-sz', style={"height": "600px"}), width=6)
             ], style={"marginTop": "20px"})
-        ], style={"padding": "20px"}), label="🔥 Heatmap Matrices", tab_style={"backgroundColor": "#E2E8F0"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold"}),
+        ], style={"padding": "20px"}), label="🔥 Heatmap Matrices", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
         
         dbc.Tab(html.Div([
             html.H4("Batting Line Summary", style={"marginBottom": "20px", "fontWeight": "bold"}),
             html.Div(id="batting-line-table", style={"marginBottom": "40px"}),
             html.H4("Raw Event Log", style={"marginBottom": "20px", "fontWeight": "bold"}),
             html.Div(id="data-table-container")
-        ], style={"padding": "30px", "backgroundColor": "white", "borderRadius": "8px", "border": "1px solid #E2E8F0"}), label="📊 Performance Tables", tab_style={"backgroundColor": "#E2E8F0"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold"}),
+        ], style={"padding": "30px", "backgroundColor": "white", "borderRadius": "8px", "border": "1px solid #E2E8F0"}), label="📊 Performance Tables", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
         
         dbc.Tab(html.Div([
             dbc.Row([
                 dbc.Col([
                     html.H4("Automated Hitter Profile Generation", style={"marginBottom": "10px", "fontWeight": "bold"}),
                     html.P("Synthesize insights from EV, LA, and Zone optimizations.", style={"color": "#64748B"}),
-                    dbc.Button("Synthesize Report via Gemini", id="btn-ai", color="danger", className="mb-4", style={"width": "100%"}),
+                    dbc.Button("Synthesize Report via Gemini", id="btn-ai", color="danger", className="mb-4", style={"width": "100%", "fontWeight": "bold"}),
                     dcc.Loading(type="dot", children=html.Div(id="ai-output", style={"padding": "20px", "backgroundColor": "white", "borderRadius": "8px", "border": "1px solid #E2E8F0", "minHeight": "200px"}))
                 ], width=6),
                 dbc.Col([
                     html.H4("Executive PDF Report", style={"marginBottom": "10px", "fontWeight": "bold"}),
                     html.P("Generate a high-resolution, 6-chart vector PDF report designed for print or iPad review.", style={"color": "#64748B"}),
-                    dbc.Button("Generate Professional PDF", id="btn-pdf", color="dark", className="mb-4", style={"width": "100%"}),
+                    dbc.Button("Generate Professional PDF", id="btn-pdf", color="dark", className="mb-4", style={"width": "100%", "fontWeight": "bold"}),
                     dcc.Download(id="download-pdf")
                 ], width=6)
             ])
-        ], style={"padding": "30px"}), label="🧠 AI & Reporting", tab_style={"backgroundColor": "#E2E8F0"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold"})
+        ], style={"padding": "30px"}), label="🧠 AI & Reporting", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
+
+        dbc.Tab(html.Div([
+            dbc.Row([
+                dbc.Col([
+                    html.H4("Ingest New Trackman Data", style={"fontWeight": "bold", "marginBottom": "20px"}),
+                    dbc.Card([
+                        dbc.CardBody([
+                            dbc.Select(id="upload-session-type", options=[{"label": "BP Session", "value": "BP"}, {"label": "Game", "value": "Game"}, {"label": "Scrimmage", "value": "Scrimmage"}], placeholder="Select Session Type...", style={"marginBottom": "15px"}),
+                            dbc.Input(id="upload-season", placeholder="Season (e.g., 2026 Spring)...", style={"marginBottom": "15px"}),
+                            dbc.Input(id="upload-opponent", placeholder="Opponent Name / Session Info...", style={"marginBottom": "20px"}),
+                            dcc.Upload(id='upload-data', children=html.Div(['Drop CSV or ', html.A('Select File', style={"fontWeight": "bold"})]), style={'width': '100%', 'height': '60px', 'lineHeight': '60px', 'borderWidth': '2px', 'borderStyle': 'dashed', 'borderColor': '#D71920', 'borderRadius': '8px', 'textAlign': 'center', 'cursor': 'pointer', 'backgroundColor': '#f8fafc'}),
+                            html.Div(id='upload-output', style={"color": "#16a34a", "fontSize": "14px", "marginTop": "15px", "fontWeight": "bold"})
+                        ])
+                    ], style={"border": "1px solid #E2E8F0", "boxShadow": "0 4px 6px -1px rgba(0,0,0,0.05)"})
+                ], width=5),
+                dbc.Col([
+                    html.H4("Manage Uploaded Sessions", style={"fontWeight": "bold", "marginBottom": "20px"}),
+                    html.Div(id="manage-sessions-table", style={"backgroundColor": "white", "border": "1px solid #E2E8F0", "borderRadius": "8px", "padding": "15px", "boxShadow": "0 4px 6px -1px rgba(0,0,0,0.05)"}),
+                    html.Div([
+                        dbc.Button("Delete Selected Session", id="btn-delete-session", color="danger", style={"marginTop": "15px", "fontWeight": "bold"}),
+                        html.Div(id="delete-output", style={"color": "#D71920", "marginTop": "10px", "fontWeight": "bold"})
+                    ])
+                ], width=7)
+            ])
+        ], style={"padding": "30px"}), label="⚙️ Data Hub", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"})
     ])
 ], style=CONTENT_STYLE)
 
@@ -486,6 +508,7 @@ app.layout = html.Div([sidebar, main_content])
 # ==========================================
 # 6. REACTIVE CALLBACKS
 # ==========================================
+
 @app.callback(
     Output('upload-output', 'children'),
     Input('upload-data', 'contents'),
@@ -493,6 +516,7 @@ app.layout = html.Div([sidebar, main_content])
 )
 def process_upload(contents, session_type, season, opponent):
     if contents is None: return ""
+    if not session_type: return "Error: Please select a Session Type before uploading."
     try:
         _, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -508,22 +532,65 @@ def process_upload(contents, session_type, season, opponent):
         available_cols = [c for c in cols_to_keep if c in df_upload.columns]
         df_cleaned = df_upload[available_cols]
         
-        df_cleaned['SessionType'] = session_type if session_type else "Game"
+        df_cleaned['SessionType'] = session_type
         df_cleaned['Season'] = season if season else "Unspecified"
         df_cleaned['Opponent'] = opponent if opponent else "Unspecified"
         
         conn = sqlite3.connect(DB_NAME)
         df_cleaned.to_sql('trackman_data', conn, if_exists='append', index=False)
         conn.close()
-        return f"✅ Data ingested successfully ({df_cleaned['SessionType'].iloc[0]})."
+        return f"✅ Data ingested successfully ({session_type})."
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error processing file: {str(e)}"
+
+@app.callback(
+    Output('manage-sessions-table', 'children'),
+    [Input('upload-output', 'children'), Input('delete-output', 'children')]
+)
+def update_manage_table(upload_msg, delete_msg):
+    conn = sqlite3.connect(DB_NAME)
+    try:
+        df = pd.read_sql("SELECT Date, SessionType, Season, Opponent, COUNT(*) as Pitches FROM trackman_data GROUP BY Date, SessionType, Season, Opponent ORDER BY Date DESC", conn)
+    except:
+        df = pd.DataFrame()
+    conn.close()
+    
+    if df.empty: return "No sessions found in the database."
+    
+    return dash_table.DataTable(
+        id='session-delete-table',
+        data=df.to_dict('records'),
+        columns=[{"name": i, "id": i} for i in df.columns],
+        row_selectable="single",
+        page_size=8,
+        style_header={'backgroundColor': '#0F172A', 'color': 'white', 'fontWeight': 'bold'},
+        style_cell={'textAlign': 'center', 'padding': '10px', 'fontFamily': 'Inter'},
+        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#F8FAFC'}]
+    )
+
+@app.callback(
+    Output('delete-output', 'children'),
+    Input('btn-delete-session', 'n_clicks'),
+    State('session-delete-table', 'selected_rows'),
+    State('session-delete-table', 'data'),
+    prevent_initial_call=True
+)
+def delete_session(n_clicks, selected_rows, table_data):
+    if not selected_rows: return "Please select a session to delete."
+    row = table_data[selected_rows[0]]
+    
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM trackman_data WHERE Date=? AND SessionType=? AND Opponent=?", (row['Date'], row['SessionType'], row['Opponent']))
+    conn.commit()
+    conn.close()
+    return f"🗑️ Deleted {row['SessionType']} session on {row['Date']}."
 
 @app.callback(
     [Output('hitter-dropdown', 'options'), Output('hitter-dropdown', 'value')],
-    Input('upload-output', 'children')
+    [Input('upload-output', 'children'), Input('delete-output', 'children')]
 )
-def update_hitters(_):
+def update_hitters(_1, _2):
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql("SELECT DISTINCT Batter FROM trackman_data", conn)
     conn.close()
@@ -585,7 +652,7 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
         df = df[df['CountStr'].isin(counts)]
 
     batted_balls = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
-    if batted_balls.empty: return html.H3("No Batted Ball Data for Selection"), "", go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), "", ""
+    if batted_balls.empty: return html.H3("No Batted Ball Data for Selection", style={"padding": "20px"}), "", go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), "", ""
 
     side = get_batter_side(df['BatterSide'].iloc[0] if 'BatterSide' in df.columns else "UNK")
     total_swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging', 'FoulBallFieldable', 'FoulBallNotFieldable'])])
@@ -599,8 +666,8 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
 
     header = [
         html.Div([
-            html.H1(hitter.upper(), style={"fontSize": "38px", "fontWeight": "900", "margin": 0, "letterSpacing": "-1px"}),
-            html.Div(f"BATS: {side}  |  RANGE: {date}  |  BATTED BALL EVENTS: {bip}", style={"fontSize": "14px", "fontWeight": "600", "color": "#94A3B8", "letterSpacing": "1px", "marginTop": "5px"})
+            html.H1(hitter.upper(), style={"fontSize": "42px", "fontWeight": "900", "margin": 0, "letterSpacing": "-1px"}),
+            html.Div(f"BATS: {side}  |  RANGE: {date}  |  BATTED BALL EVENTS: {bip}", style={"fontSize": "15px", "fontWeight": "600", "color": "#94A3B8", "letterSpacing": "1px", "marginTop": "6px"})
         ])
     ]
 
@@ -610,9 +677,9 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
     for label, val in kpis:
         val_color = "#D71920" if label in ["90th% EV", "SWEET SPOT %", "HARD HIT %"] else "#0F172A"
         kpi_cards.append(html.Div([
-            html.Div(label, style={"fontSize": "11px", "fontWeight": "700", "color": "#64748B", "marginBottom": "5px"}),
+            html.Div(label, style={"fontSize": "11px", "fontWeight": "800", "color": "#64748B", "marginBottom": "5px"}),
             html.Div(val, style={"fontSize": "26px", "fontWeight": "900", "color": val_color})
-        ], style={"background": "#FFFFFF", "border": "1px solid #E2E8F0", "borderRadius": "12px", "padding": "20px 15px", "textAlign": "center", "boxShadow": "0 4px 6px -1px rgba(0,0,0,0.03)"}))
+        ], style={"background": "#FFFFFF", "border": "1px solid #E2E8F0", "borderRadius": "12px", "padding": "20px 10px", "textAlign": "center", "boxShadow": "0 4px 6px -1px rgba(0,0,0,0.03)"}))
 
     fig_field = render_3d_stadium(batted_balls)
     fig_zone = render_3d_strikezone(batted_balls)
@@ -633,7 +700,7 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
     raw_table = dash_table.DataTable(
         data=batted_balls[['PitchNo', 'SessionType', 'Pitcher', 'TaggedPitchType', 'ExitSpeed', 'Angle', 'Direction', 'Distance', 'PlayResult']].sort_values(by='ExitSpeed', ascending=False).to_dict('records'),
         columns=[{"name": i, "id": i} for i in ['PitchNo', 'SessionType', 'Pitcher', 'TaggedPitchType', 'ExitSpeed', 'Angle', 'Direction', 'Distance', 'PlayResult']],
-        page_size=10,
+        page_size=15,
         style_header={'backgroundColor': '#0F172A', 'color': 'white', 'fontWeight': 'bold'},
         style_cell={'textAlign': 'center', 'padding': '10px', 'fontFamily': 'Inter'},
         style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': '#F8FAFC'}]
@@ -644,12 +711,14 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
 @app.callback(
     Output("ai-output", "children"),
     Input("btn-ai", "n_clicks"),
-    [State("hitter-dropdown", "value"), State("date-dropdown", "value"), State("gemini-key", "value"),
+    [State("hitter-dropdown", "value"), State("date-dropdown", "value"),
      State('filter-session', 'value'), State('filter-opponent', 'value')],
     prevent_initial_call=True
 )
-def generate_ai_report(n_clicks, hitter, date, key, sessions, opponents):
-    if not key: return html.Div("Please provide a Gemini API Key in the sidebar.", style={"color": "red"})
+def generate_ai_report(n_clicks, hitter, date, sessions, opponents):
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key: return html.Div("API Key not found in Environment Variables on Render.", style={"color": "red"})
+    
     try:
         conn = sqlite3.connect(DB_NAME)
         query = f"SELECT * FROM trackman_data WHERE Batter = '{hitter}'"
