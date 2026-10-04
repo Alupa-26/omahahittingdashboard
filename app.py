@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output, State, dash_table, callback_context
+from dash import dcc, html, Input, Output, State, dash_table
 import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
@@ -127,7 +127,6 @@ def render_3d_stadium(df):
     grass_material = dict(ambient=0.8, diffuse=0.9, roughness=0.9, specular=0.1)
     dirt_material = dict(ambient=0.9, diffuse=0.8, roughness=1.0, specular=0.0)
 
-    # Majestic Outfield Grass Striping
     theta_arc = np.linspace(-np.pi/4, np.pi/4, 200)
     for r in range(150, 401, 25):
         x_out, y_out = r * np.sin(theta_arc), r * np.cos(theta_arc)
@@ -135,31 +134,28 @@ def render_3d_stadium(df):
         stripe_color = '#14532D' if (r//25)%2 == 0 else '#166534'
         fig.add_trace(go.Mesh3d(x=np.concatenate([x_out, x_in, [x_out[0]]]), y=np.concatenate([y_out, y_in, [y_out[0]]]), z=np.zeros(401), color=stripe_color, lighting=grass_material, hoverinfo='skip', showlegend=False))
         
-    # High-Definition Infield Dirt
     theta_full = np.linspace(0, 2*np.pi, 100)
     fig.add_trace(go.Mesh3d(x=np.concatenate([[0], 145 * np.sin(np.linspace(-np.pi/4, np.pi/4, 100)), [0]]), y=np.concatenate([[0], 145 * np.cos(np.linspace(-np.pi/4, np.pi/4, 100)), [0]]), z=np.full(102, 0.1), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Mesh3d(x=13*np.sin(theta_full), y=13*np.cos(theta_full), z=np.full(100, 0.15), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
     fig.add_trace(go.Mesh3d(x=9*np.sin(theta_full), y=60.5 + 9*np.cos(theta_full), z=np.full(100, 0.15), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
 
-    # Warning Track
     fig.add_trace(go.Mesh3d(x=np.concatenate([400 * np.sin(theta_arc), 385 * np.sin(theta_arc[::-1]), [400 * np.sin(theta_arc[0])]]), y=np.concatenate([400 * np.cos(theta_arc), 385 * np.cos(theta_arc[::-1]), [400 * np.cos(theta_arc[0])]]), z=np.full(401, 0.2), color='#5D4037', lighting=dirt_material, hoverinfo='skip', showlegend=False))
     
-    # Ultra-Professional Translucent Outfield Wall
     wall_x = np.concatenate([400 * np.sin(theta_arc), 400 * np.sin(theta_arc[::-1])])
     wall_y = np.concatenate([400 * np.cos(theta_arc), 400 * np.cos(theta_arc[::-1])])
     wall_z = np.concatenate([np.zeros(200), np.full(200, 15)])
     fig.add_trace(go.Mesh3d(x=wall_x, y=wall_y, z=wall_z, color='rgba(15, 23, 42, 0.4)', alphahull=0, hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter3d(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), z=np.full(200, 15), mode='lines', line=dict(color='#D71920', width=8), hoverinfo='skip', showlegend=False))
 
-    # Base Paths & Chalk Lines
     fig.add_trace(go.Scatter3d(x=[63.6, 0, -63.6], y=[63.6, 127.2, 63.6], z=[0.3, 0.3, 0.3], mode='markers', marker=dict(color='white', size=6, symbol='square'), hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter3d(x=[0, 283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=4), hoverinfo='skip', showlegend=False))
     fig.add_trace(go.Scatter3d(x=[0, -283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=4), hoverinfo='skip', showlegend=False))
 
     if not df.empty:
         for _, row in df.iterrows():
-            dist, direction, angle, ev = row['Distance'], row['Direction'], row['Angle'], row['ExitSpeed']
+            dist, direction, angle, ev = row.get('Distance'), row.get('Direction'), row.get('Angle'), row.get('ExitSpeed')
             if pd.isna(dist) or pd.isna(direction) or pd.isna(angle): continue
+            
             t = np.linspace(0, 1, 60)
             x_end, y_end = dist * np.sin(np.radians(direction)), dist * np.cos(np.radians(direction))
             x_traj, y_traj = t * x_end, t * y_end
@@ -168,11 +164,8 @@ def render_3d_stadium(df):
             
             color = '#D71920' if (ev >= 95 and 8 <= angle <= 32) else '#3B82F6' if ev >= 90 else '#94A3B8'
             
-            # Interactive Flight Path
             fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=z_traj, mode='lines', line=dict(color=color, width=6), hovertemplate=f"<b>EV:</b> {ev:.1f} mph<br><b>LA:</b> {angle:.1f}°<br><b>Dist:</b> {dist:.0f} ft<extra></extra>", showlegend=False))
-            # Ground Tracking Shadow
-            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.3)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
-            # Baseball Landing Marker
+            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.2)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
             fig.add_trace(go.Scatter3d(x=[x_end], y=[y_end], z=[0.3], mode='markers', marker=dict(color=color, size=7, line=dict(color='white', width=2)), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
@@ -184,29 +177,32 @@ def render_3d_stadium(df):
 def render_3d_strikezone(df):
     fig = go.Figure()
     
-    # Photorealistic Home Plate
     plate_x, plate_y = [-0.708, 0.708, 0.708, 0, -0.708, -0.708], [0, 0, 0.708, 1.417, 0.708, 0]
     fig.add_trace(go.Scatter3d(x=plate_x, y=plate_y, z=np.zeros(6), mode='lines', surfaceaxis=2, surfacecolor='white', line=dict(color='#0F172A', width=6), hoverinfo='skip', showlegend=False))
     
-    # Volumetric Glass Zone Box
     sz_z_lines, sz_x_lines = [1.5, 2.166, 2.833, 3.5], [-0.833, -0.277, 0.277, 0.833]
     for y_plane in [0, 1.417]:
         fig.add_trace(go.Scatter3d(x=[-0.833, 0.833, 0.833, -0.833, -0.833], y=np.full(5, y_plane), z=[1.5, 1.5, 3.5, 3.5, 1.5], mode='lines', line=dict(color='rgba(215, 25, 32, 0.9)' if y_plane==0 else 'rgba(148, 163, 184, 0.5)', width=5), hoverinfo='skip', showlegend=False))
         for z in sz_z_lines[1:3]: fig.add_trace(go.Scatter3d(x=[-0.833, 0.833], y=[y_plane, y_plane], z=[z, z], mode='lines', line=dict(color='rgba(148, 163, 184, 0.3)', width=2), hoverinfo='skip', showlegend=False))
         for x in sz_x_lines[1:3]: fig.add_trace(go.Scatter3d(x=[x, x], y=[y_plane, y_plane], z=[1.5, 3.5], mode='lines', line=dict(color='rgba(148, 163, 184, 0.3)', width=2), hoverinfo='skip', showlegend=False))
     
-    # Connectors to create 3D Depth
     for x in [-0.833, 0.833]:
         for z in [1.5, 3.5]: fig.add_trace(go.Scatter3d(x=[x, x], y=[0, 1.417], z=[z, z], mode='lines', line=dict(color='rgba(148, 163, 184, 0.5)', width=4), hoverinfo='skip', showlegend=False))
 
     if not df.empty:
         df_cp = df.copy()
-        # Fallback mappings for robust Contact Depth Geometry
-        df_cp['Depth'] = df_cp['ContactPositionY'] if 'ContactPositionY' in df_cp.columns and not df_cp['ContactPositionY'].isna().all() else 0.5
-        df_cp['Height'] = df_cp['ContactPositionZ'] if 'ContactPositionZ' in df_cp.columns and not df_cp['ContactPositionZ'].isna().all() else df_cp['PlateLocHeight']
-        df_cp['Side'] = df_cp['ContactPositionX'] if 'ContactPositionX' in df_cp.columns and not df_cp['ContactPositionX'].isna().all() else df_cp['PlateLocSide']
+        # Ensure mapping exactly to TrackMan's internal convention
+        if 'ContactPositionZ' in df_cp.columns: df_cp['Side'] = df_cp['ContactPositionZ'].combine_first(df_cp['PlateLocSide'])
+        else: df_cp['Side'] = df_cp['PlateLocSide']
+        
+        if 'ContactPositionX' in df_cp.columns: df_cp['Depth'] = df_cp['ContactPositionX'].combine_first(pd.Series(0.5, index=df_cp.index))
+        else: df_cp['Depth'] = 0.5
+        
+        if 'ContactPositionY' in df_cp.columns: df_cp['Height'] = df_cp['ContactPositionY'].combine_first(df_cp['PlateLocHeight'])
+        else: df_cp['Height'] = df_cp['PlateLocHeight']
         
         valid_cp = df_cp.dropna(subset=['Side', 'Height', 'Depth', 'ExitSpeed'])
+        
         if not valid_cp.empty:
             fig.add_trace(go.Scatter3d(
                 x=valid_cp['Side'], y=valid_cp['Depth'], z=valid_cp['Height'], mode='markers',
@@ -214,7 +210,6 @@ def render_3d_strikezone(df):
                 hovertemplate="<b style='color:#0F172A; font-size:14px;'>EV: %{marker.color:.1f} mph</b><br>Side: %{x:.2f} ft<br>Depth: %{y:.2f} ft<br>Height: %{z:.2f} ft<extra></extra>",
                 name='Contact Point'
             ))
-            # Drop shadow indicator on the ground
             fig.add_trace(go.Scatter3d(x=valid_cp['Side'], y=valid_cp['Depth'], z=np.zeros(len(valid_cp)), mode='markers', marker=dict(color='rgba(0,0,0,0.3)', size=6), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
@@ -344,7 +339,11 @@ def generate_pdf_buffer(df, kpis, player_name, side, date_str):
 
     ax1 = fig.add_axes([0.025, 0.42, 0.28, 0.34])
     _draw_field(ax1)
-    ax1.scatter(df['Distance'] * np.sin(np.radians(df['Direction'])), df['Distance'] * np.cos(np.radians(df['Direction'])), c=df['ExitSpeed'], cmap='coolwarm', vmin=75, vmax=105, s=40, edgecolors='black', lw=0.5, zorder=6)
+    
+    # Safe Plotting for PDF
+    safe_df = df.dropna(subset=['Distance', 'Direction', 'ExitSpeed'])
+    if not safe_df.empty:
+        ax1.scatter(safe_df['Distance'] * np.sin(np.radians(safe_df['Direction'])), safe_df['Distance'] * np.cos(np.radians(safe_df['Direction'])), c=safe_df['ExitSpeed'], cmap='coolwarm', vmin=75, vmax=105, s=40, edgecolors='black', lw=0.5, zorder=6)
     ax1.set(xlim=(-300, 300), ylim=(-30, 410), aspect='equal', xticks=[], yticks=[], title="Batted Ball Spray (Color = EV)")
 
     df_copy = df.copy()
@@ -368,7 +367,7 @@ def generate_pdf_buffer(df, kpis, player_name, side, date_str):
     ax2.set(xlim=(-300, 300), ylim=(-30, 410), aspect='equal', xticks=[], yticks=[], title="Avg EV by Quadrant")
     ax3.set(xlim=(-300, 300), ylim=(-30, 410), aspect='equal', xticks=[], yticks=[], title="Avg LA by Quadrant")
 
-    def _draw_sz(ax, metric, vmin, vmax, cmap_name, title, is_ev=True):
+    def _draw_sz(ax, metric, vmin, vmax, cmap_name, title):
         df_copy['SZ'] = df_copy.apply(lambda r: assign_sz_zone(r['PlateLocSide'], r['PlateLocHeight']), axis=1)
         z_avgs = df_copy.groupby('SZ')[metric].mean()
         n, cm = mcolors.Normalize(vmin=vmin, vmax=vmax), plt.get_cmap(cmap_name)
@@ -381,16 +380,23 @@ def generate_pdf_buffer(df, kpis, player_name, side, date_str):
         ax.set(xlim=(-2, 2), ylim=(0, 4.5), aspect='equal', xticks=[], yticks=[], title=title)
 
     ax4 = fig.add_axes([0.025, 0.06, 0.28, 0.34]); _draw_sz(ax4, 'ExitSpeed', 80, 100, 'coolwarm', "Avg EV by Pitch Location")
-    ax5 = fig.add_axes([0.345, 0.06, 0.28, 0.34]); _draw_sz(ax5, 'Angle', 0, 35, 'viridis', "Avg LA by Pitch Location", is_ev=False)
+    ax5 = fig.add_axes([0.345, 0.06, 0.28, 0.34]); _draw_sz(ax5, 'Angle', 0, 35, 'viridis', "Avg LA by Pitch Location")
 
     ax6 = fig.add_axes([0.665, 0.06, 0.28, 0.34])
-    dep_col = 'ContactPositionZ' if 'ContactPositionZ' in df.columns and not df['ContactPositionZ'].isna().all() else 'ContactPositionY'
-    cp_x = df['ContactPositionX'] * 12 if 'ContactPositionX' in df.columns else df['PlateLocSide'] * 12
-    cp_z = df[dep_col] * 12 if dep_col in df.columns else np.zeros(len(df))
+    
+    # Safe Contact Plotting
+    if 'ContactPositionZ' in df.columns: cp_side = df['ContactPositionZ'].combine_first(df['PlateLocSide'])
+    else: cp_side = df['PlateLocSide']
+    if 'ContactPositionX' in df.columns: cp_depth = df['ContactPositionX'].combine_first(pd.Series(0.5, index=df.index))
+    else: cp_depth = np.full(len(df), 0.5)
+    
     ax6.grid(True, linestyle='--', alpha=0.6, color='#CBD5E1', zorder=0)
     ax6.axhline(0, color='black', lw=1.5, zorder=1); ax6.axvline(0, color='black', lw=1.5, zorder=1)
     ax6.add_patch(MplPolygon(np.column_stack(([0, -8.5, -8.5, 8.5, 8.5, 0], [0, 8.5, 17, 17, 8.5, 0])), facecolor='#F1F5F9', edgecolor='black', lw=1.5, zorder=2))
-    ax6.scatter(cp_z, cp_x, c=df['ExitSpeed'], cmap='coolwarm', vmin=75, vmax=105, s=50, edgecolors='black', lw=0.5, zorder=5)
+    
+    safe_cp = df.dropna(subset=['ExitSpeed'])
+    if not safe_cp.empty:
+        ax6.scatter(cp_side[safe_cp.index] * 12, cp_depth[safe_cp.index] * 12, c=safe_cp['ExitSpeed'], cmap='coolwarm', vmin=75, vmax=105, s=50, edgecolors='black', lw=0.5, zorder=5)
     ax6.set(xlim=(-30, 30), ylim=(-5, 55), aspect='equal', title="Contact Depth (inches)", xlabel="Depth Out In Front", ylabel="Side to Side")
 
     buf = BytesIO()
@@ -527,11 +533,13 @@ def process_upload(contents, session_type, season, opponent):
         _, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         
-        # Dual-decoder to seamlessly handle Trackman's UTF-8-BOM files
+        # Dual-Decoder to fix Trackman UTF-8-BOM parsing issues
         try:
             df_upload = pd.read_csv(io.StringIO(decoded.decode('utf-8-sig')))
         except:
             df_upload = pd.read_csv(io.StringIO(decoded.decode('latin1')))
+            
+        df_upload.columns = df_upload.columns.str.strip()
         
         cols_to_keep = [
             'PitchNo', 'Date', 'Time', 'Pitcher', 'Batter', 'BatterSide', 'PitcherThrows',
@@ -543,7 +551,6 @@ def process_upload(contents, session_type, season, opponent):
         available_cols = [c for c in cols_to_keep if c in df_upload.columns]
         df_cleaned = df_upload[available_cols].copy()
         
-        # Force critical batted ball metrics to be pure floats 
         numeric_cols = ['ExitSpeed', 'Angle', 'Direction', 'Distance', 'PlateLocHeight', 'PlateLocSide', 'ContactPositionX', 'ContactPositionY', 'ContactPositionZ']
         for col in numeric_cols:
             if col in df_cleaned.columns:
@@ -675,7 +682,9 @@ def update_dashboard(hitter, date, sessions, seasons, opponents, hands, pitches,
         df['CountStr'] = df['Balls'].astype(str) + "-" + df['Strikes'].astype(str)
         df = df[df['CountStr'].isin(counts)]
 
-    batted_balls = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
+    # Allow BP/Indoor sessions to populate by only requiring ExitSpeed > 0
+    batted_balls = df.dropna(subset=['ExitSpeed'])
+    batted_balls = batted_balls[batted_balls['ExitSpeed'] > 0]
     
     if batted_balls.empty:
         empty_header = html.Div([html.H1(hitter.upper(), style={"fontSize": "42px", "fontWeight": "900", "margin": 0}), html.Div("NO BATTED BALL EVENTS FOUND FOR CURRENT FILTERS", style={"fontSize": "15px", "fontWeight": "600", "color": "#D71920"})])
@@ -698,7 +707,7 @@ def update_dashboard(hitter, date, sessions, seasons, opponents, hands, pitches,
         ])
     ]
 
-    kpis = [("TOTAL SWINGS", total_swings), ("HARD HIT %", f"{hh_pct:.1f}%"), ("SWEET SPOT %", f"{swsp_pct:.1f}%"), ("AVG EV", f"{avg_ev:.1f}"), ("90th% EV", f"{ev90:.1f}"), ("MAX EV", f"{max_ev:.1f}"), ("AVG LA", f"{avg_la:.1f}°"), ("LA DEV (SD)", f"{std_la:.1f}°"), ("AVG DIST", f"{avg_dist:.0f} ft")]
+    kpis = [("TOTAL SWINGS", total_swings), ("HARD HIT %", f"{hh_pct:.1f}%"), ("SWEET SPOT %", f"{swsp_pct:.1f}%"), ("AVG EV", f"{avg_ev:.1f}"), ("90th% EV", f"{ev90:.1f}"), ("MAX EV", f"{max_ev:.1f}"), ("AVG LA", f"{avg_la:.1f}°"), ("LA DEV (SD)", f"{std_la:.1f}°"), ("AVG DIST", f"{avg_dist:.0f} ft" if not pd.isna(avg_dist) else "N/A")]
     
     kpi_cards = []
     for label, val in kpis:
@@ -753,15 +762,19 @@ def download_pdf(n_clicks, hitter, date, sessions, seasons, opponents):
     if seasons: df = df[df['Season'].isin(seasons)]
     if opponents: df = df[df['Opponent'].isin(opponents)]
     
-    batted_balls = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
+    batted_balls = df.dropna(subset=['ExitSpeed'])
+    batted_balls = batted_balls[batted_balls['ExitSpeed'] > 0]
+    
     side = get_batter_side(df['BatterSide'].iloc[0] if 'BatterSide' in df.columns else "UNK")
     
     swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging', 'FoulBallFieldable', 'FoulBallNotFieldable'])])
     bip = len(batted_balls)
+    avg_dist = batted_balls['Distance'].mean()
+    
     kpis = [
         ("SWINGS", swings), ("HARD HIT %", f"{(len(batted_balls[batted_balls['ExitSpeed'] >= 95]) / bip * 100):.1f}%" if bip else "0%"), ("SWEET SPOT %", f"{(len(batted_balls[(batted_balls['Angle'] >= 8) & (batted_balls['Angle'] <= 32)]) / bip * 100):.1f}%" if bip else "0%"),
         ("AVG EV", f"{batted_balls['ExitSpeed'].mean():.1f}"), ("90th% EV", f"{np.percentile(batted_balls['ExitSpeed'], 90):.1f}"), ("MAX EV", f"{batted_balls['ExitSpeed'].max():.1f}"),
-        ("AVG LA", f"{batted_balls['Angle'].mean():.1f}°"), ("LA DEV", f"{batted_balls['Angle'].std():.1f}°"), ("AVG DIST", f"{batted_balls['Distance'].mean():.0f} ft")
+        ("AVG LA", f"{batted_balls['Angle'].mean():.1f}°"), ("LA DEV", f"{batted_balls['Angle'].std():.1f}°"), ("AVG DIST", f"{avg_dist:.0f} ft" if not pd.isna(avg_dist) else "N/A")
     ]
     
     date_str = date if date != "All-Time" else "Multiple Sessions Filtered"
