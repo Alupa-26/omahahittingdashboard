@@ -10,11 +10,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Polygon as MplPolygon, Wedge, FancyBboxPatch
 import matplotlib.colors as mcolors
-from google import genai
 from io import BytesIO
 import base64
 import io
-import os
 
 # ==========================================
 # 1. SYSTEM CONFIGURATION & INITIALIZATION
@@ -114,13 +112,10 @@ def calc_batting_line(df):
 def get_full_batting_line(df):
     total = calc_batting_line(df)
     total['Split'] = "TOTAL"
-    
     lhp = calc_batting_line(df[df['PitcherThrows'] == 'Left'])
     lhp['Split'] = "Vs. LHP"
-    
     rhp = calc_batting_line(df[df['PitcherThrows'] == 'Right'])
     rhp['Split'] = "Vs. RHP"
-    
     combined = pd.concat([total, lhp, rhp], ignore_index=True)
     return combined[['Split', 'AB', 'H', '1B', '2B', '3B', 'HR', 'BB', 'K', 'AVG', 'SLG', 'OBP', 'OPS']]
 
@@ -129,37 +124,37 @@ def get_full_batting_line(df):
 # ==========================================
 def render_3d_stadium(df):
     fig = go.Figure()
-    grass_material = dict(ambient=0.7, diffuse=0.8, roughness=0.9, specular=0.1)
-    dirt_material = dict(ambient=0.8, diffuse=0.7, roughness=1.0, specular=0.0)
+    grass_material = dict(ambient=0.8, diffuse=0.9, roughness=0.9, specular=0.1)
+    dirt_material = dict(ambient=0.9, diffuse=0.8, roughness=1.0, specular=0.0)
 
-    # Outfield Grass Striping
-    theta_arc = np.linspace(-np.pi/4, np.pi/4, 150)
+    # Majestic Outfield Grass Striping
+    theta_arc = np.linspace(-np.pi/4, np.pi/4, 200)
     for r in range(150, 401, 25):
         x_out, y_out = r * np.sin(theta_arc), r * np.cos(theta_arc)
         x_in, y_in = (r-25) * np.sin(theta_arc[::-1]), (r-25) * np.cos(theta_arc[::-1])
-        stripe_color = '#15803d' if (r//25)%2 == 0 else '#166534'
-        fig.add_trace(go.Mesh3d(x=np.concatenate([x_out, x_in, [x_out[0]]]), y=np.concatenate([y_out, y_in, [y_out[0]]]), z=np.zeros(301), color=stripe_color, lighting=grass_material, hoverinfo='skip', showlegend=False))
+        stripe_color = '#14532D' if (r//25)%2 == 0 else '#166534'
+        fig.add_trace(go.Mesh3d(x=np.concatenate([x_out, x_in, [x_out[0]]]), y=np.concatenate([y_out, y_in, [y_out[0]]]), z=np.zeros(401), color=stripe_color, lighting=grass_material, hoverinfo='skip', showlegend=False))
         
-    # Infield Dirt
-    theta_full = np.linspace(0, 2*np.pi, 50)
-    fig.add_trace(go.Mesh3d(x=np.concatenate([[0], 145 * np.sin(np.linspace(-np.pi/4, np.pi/4, 50)), [0]]), y=np.concatenate([[0], 145 * np.cos(np.linspace(-np.pi/4, np.pi/4, 50)), [0]]), z=np.full(52, 0.1), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Mesh3d(x=13*np.sin(theta_full), y=13*np.cos(theta_full), z=np.full(50, 0.15), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
-    fig.add_trace(go.Mesh3d(x=9*np.sin(theta_full), y=60.5 + 9*np.cos(theta_full), z=np.full(50, 0.15), color='#A1887F', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
+    # High-Definition Infield Dirt
+    theta_full = np.linspace(0, 2*np.pi, 100)
+    fig.add_trace(go.Mesh3d(x=np.concatenate([[0], 145 * np.sin(np.linspace(-np.pi/4, np.pi/4, 100)), [0]]), y=np.concatenate([[0], 145 * np.cos(np.linspace(-np.pi/4, np.pi/4, 100)), [0]]), z=np.full(102, 0.1), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Mesh3d(x=13*np.sin(theta_full), y=13*np.cos(theta_full), z=np.full(100, 0.15), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
+    fig.add_trace(go.Mesh3d(x=9*np.sin(theta_full), y=60.5 + 9*np.cos(theta_full), z=np.full(100, 0.15), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False)) 
 
-    # Warning Track & Sleek Outfield Wall
-    fig.add_trace(go.Mesh3d(x=np.concatenate([400 * np.sin(theta_arc), 385 * np.sin(theta_arc[::-1]), [400 * np.sin(theta_arc[0])]]), y=np.concatenate([400 * np.cos(theta_arc), 385 * np.cos(theta_arc[::-1]), [400 * np.cos(theta_arc[0])]]), z=np.full(301, 0.2), color='#8D6E63', lighting=dirt_material, hoverinfo='skip', showlegend=False))
+    # Warning Track
+    fig.add_trace(go.Mesh3d(x=np.concatenate([400 * np.sin(theta_arc), 385 * np.sin(theta_arc[::-1]), [400 * np.sin(theta_arc[0])]]), y=np.concatenate([400 * np.cos(theta_arc), 385 * np.cos(theta_arc[::-1]), [400 * np.cos(theta_arc[0])]]), z=np.full(401, 0.2), color='#5D4037', lighting=dirt_material, hoverinfo='skip', showlegend=False))
     
-    # NEW Translucent Outfield Wall (No black center-field chunk)
+    # Ultra-Professional Translucent Outfield Wall
     wall_x = np.concatenate([400 * np.sin(theta_arc), 400 * np.sin(theta_arc[::-1])])
     wall_y = np.concatenate([400 * np.cos(theta_arc), 400 * np.cos(theta_arc[::-1])])
-    wall_z = np.concatenate([np.zeros(150), np.full(150, 10)])
-    fig.add_trace(go.Mesh3d(x=wall_x, y=wall_y, z=wall_z, color='rgba(15, 23, 42, 0.6)', alphahull=0, hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter3d(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), z=np.full(150, 10), mode='lines', line=dict(color='#D71920', width=5), hoverinfo='skip', showlegend=False))
+    wall_z = np.concatenate([np.zeros(200), np.full(200, 15)])
+    fig.add_trace(go.Mesh3d(x=wall_x, y=wall_y, z=wall_z, color='rgba(15, 23, 42, 0.4)', alphahull=0, hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter3d(x=400 * np.sin(theta_arc), y=400 * np.cos(theta_arc), z=np.full(200, 15), mode='lines', line=dict(color='#D71920', width=8), hoverinfo='skip', showlegend=False))
 
-    # Base Paths & Lines
-    fig.add_trace(go.Scatter3d(x=[63.6, 0, -63.6], y=[63.6, 127.2, 63.6], z=[0.3, 0.3, 0.3], mode='markers', marker=dict(color='white', size=5, symbol='square'), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter3d(x=[0, 283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=3), hoverinfo='skip', showlegend=False))
-    fig.add_trace(go.Scatter3d(x=[0, -283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=3), hoverinfo='skip', showlegend=False))
+    # Base Paths & Chalk Lines
+    fig.add_trace(go.Scatter3d(x=[63.6, 0, -63.6], y=[63.6, 127.2, 63.6], z=[0.3, 0.3, 0.3], mode='markers', marker=dict(color='white', size=6, symbol='square'), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter3d(x=[0, 283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=4), hoverinfo='skip', showlegend=False))
+    fig.add_trace(go.Scatter3d(x=[0, -283], y=[0, 283], z=[0.2, 0.2], mode='lines', line=dict(color='white', width=4), hoverinfo='skip', showlegend=False))
 
     if not df.empty:
         for _, row in df.iterrows():
@@ -173,43 +168,57 @@ def render_3d_stadium(df):
             
             color = '#D71920' if (ev >= 95 and 8 <= angle <= 32) else '#3B82F6' if ev >= 90 else '#94A3B8'
             
-            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=z_traj, mode='lines', line=dict(color=color, width=4), hovertemplate=f"<b>EV:</b> {ev:.1f} mph<br><b>LA:</b> {angle:.1f}°<br><b>Dist:</b> {dist:.0f} ft<extra></extra>", showlegend=False))
-            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.2)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
-            fig.add_trace(go.Scatter3d(x=[x_end], y=[y_end], z=[0.3], mode='markers', marker=dict(color=color, size=5, line=dict(color='white', width=1)), hoverinfo='skip', showlegend=False))
+            # Interactive Flight Path
+            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=z_traj, mode='lines', line=dict(color=color, width=6), hovertemplate=f"<b>EV:</b> {ev:.1f} mph<br><b>LA:</b> {angle:.1f}°<br><b>Dist:</b> {dist:.0f} ft<extra></extra>", showlegend=False))
+            # Ground Tracking Shadow
+            fig.add_trace(go.Scatter3d(x=x_traj, y=y_traj, z=np.full(60, 0.3), mode='lines', line=dict(color='rgba(0,0,0,0.3)', width=2, dash='dot'), hoverinfo='skip', showlegend=False))
+            # Baseball Landing Marker
+            fig.add_trace(go.Scatter3d(x=[x_end], y=[y_end], z=[0.3], mode='markers', marker=dict(color=color, size=7, line=dict(color='white', width=2)), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
-        scene=dict(xaxis=dict(range=[-300, 300], visible=False), yaxis=dict(range=[-20, 450], visible=False), zaxis=dict(range=[0, 150], visible=False), aspectmode='manual', aspectratio=dict(x=1.3, y=1.3, z=0.35), camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0, y=-1.8, z=0.6))),
+        scene=dict(xaxis=dict(range=[-300, 300], visible=False), yaxis=dict(range=[-20, 450], visible=False), zaxis=dict(range=[0, 150], visible=False), aspectmode='manual', aspectratio=dict(x=1.3, y=1.3, z=0.3), camera=dict(up=dict(x=0, y=0, z=1), center=dict(x=0, y=0, z=0), eye=dict(x=0, y=-1.5, z=0.6))),
         margin=dict(l=0, r=0, b=0, t=0), paper_bgcolor='rgba(0,0,0,0)'
     )
     return fig
 
 def render_3d_strikezone(df):
     fig = go.Figure()
+    
+    # Photorealistic Home Plate
     plate_x, plate_y = [-0.708, 0.708, 0.708, 0, -0.708, -0.708], [0, 0, 0.708, 1.417, 0.708, 0]
     fig.add_trace(go.Scatter3d(x=plate_x, y=plate_y, z=np.zeros(6), mode='lines', surfaceaxis=2, surfacecolor='white', line=dict(color='#0F172A', width=6), hoverinfo='skip', showlegend=False))
     
+    # Volumetric Glass Zone Box
     sz_z_lines, sz_x_lines = [1.5, 2.166, 2.833, 3.5], [-0.833, -0.277, 0.277, 0.833]
     for y_plane in [0, 1.417]:
-        fig.add_trace(go.Scatter3d(x=[-0.833, 0.833, 0.833, -0.833, -0.833], y=np.full(5, y_plane), z=[1.5, 1.5, 3.5, 3.5, 1.5], mode='lines', line=dict(color='rgba(215, 25, 32, 0.8)' if y_plane==0 else 'rgba(148, 163, 184, 0.4)', width=4), hoverinfo='skip', showlegend=False))
+        fig.add_trace(go.Scatter3d(x=[-0.833, 0.833, 0.833, -0.833, -0.833], y=np.full(5, y_plane), z=[1.5, 1.5, 3.5, 3.5, 1.5], mode='lines', line=dict(color='rgba(215, 25, 32, 0.9)' if y_plane==0 else 'rgba(148, 163, 184, 0.5)', width=5), hoverinfo='skip', showlegend=False))
         for z in sz_z_lines[1:3]: fig.add_trace(go.Scatter3d(x=[-0.833, 0.833], y=[y_plane, y_plane], z=[z, z], mode='lines', line=dict(color='rgba(148, 163, 184, 0.3)', width=2), hoverinfo='skip', showlegend=False))
         for x in sz_x_lines[1:3]: fig.add_trace(go.Scatter3d(x=[x, x], y=[y_plane, y_plane], z=[1.5, 3.5], mode='lines', line=dict(color='rgba(148, 163, 184, 0.3)', width=2), hoverinfo='skip', showlegend=False))
+    
+    # Connectors to create 3D Depth
     for x in [-0.833, 0.833]:
-        for z in [1.5, 3.5]: fig.add_trace(go.Scatter3d(x=[x, x], y=[0, 1.417], z=[z, z], mode='lines', line=dict(color='rgba(148, 163, 184, 0.5)', width=3), hoverinfo='skip', showlegend=False))
+        for z in [1.5, 3.5]: fig.add_trace(go.Scatter3d(x=[x, x], y=[0, 1.417], z=[z, z], mode='lines', line=dict(color='rgba(148, 163, 184, 0.5)', width=4), hoverinfo='skip', showlegend=False))
 
     if not df.empty:
-        depth_col = 'ContactPositionZ' if 'ContactPositionZ' in df.columns and not df['ContactPositionZ'].isna().all() else 'ContactPositionY'
-        valid_cp = df.dropna(subset=['PlateLocSide', 'PlateLocHeight', depth_col, 'ExitSpeed'])
+        df_cp = df.copy()
+        # Fallback mappings for robust Contact Depth Geometry
+        df_cp['Depth'] = df_cp['ContactPositionY'] if 'ContactPositionY' in df_cp.columns and not df_cp['ContactPositionY'].isna().all() else 0.5
+        df_cp['Height'] = df_cp['ContactPositionZ'] if 'ContactPositionZ' in df_cp.columns and not df_cp['ContactPositionZ'].isna().all() else df_cp['PlateLocHeight']
+        df_cp['Side'] = df_cp['ContactPositionX'] if 'ContactPositionX' in df_cp.columns and not df_cp['ContactPositionX'].isna().all() else df_cp['PlateLocSide']
+        
+        valid_cp = df_cp.dropna(subset=['Side', 'Height', 'Depth', 'ExitSpeed'])
         if not valid_cp.empty:
             fig.add_trace(go.Scatter3d(
-                x=valid_cp['PlateLocSide'], y=valid_cp[depth_col], z=valid_cp['PlateLocHeight'], mode='markers',
-                marker=dict(size=9, color=valid_cp['ExitSpeed'], colorscale='Turbo', showscale=True, colorbar=dict(title="EV (mph)", len=0.75, thickness=15), line=dict(color='black', width=1)),
-                hovertemplate="<b style='color:#0F172A'>EV: %{marker.color:.1f} mph</b><br>Side (X): %{x:.2f} ft<br>Depth (Y): %{y:.2f} ft<br>Height (Z): %{z:.2f} ft<extra></extra>",
-                name='Contact'
+                x=valid_cp['Side'], y=valid_cp['Depth'], z=valid_cp['Height'], mode='markers',
+                marker=dict(size=12, color=valid_cp['ExitSpeed'], colorscale='Turbo', showscale=True, colorbar=dict(title="EV (mph)", len=0.8, thickness=20), line=dict(color='black', width=1.5)),
+                hovertemplate="<b style='color:#0F172A; font-size:14px;'>EV: %{marker.color:.1f} mph</b><br>Side: %{x:.2f} ft<br>Depth: %{y:.2f} ft<br>Height: %{z:.2f} ft<extra></extra>",
+                name='Contact Point'
             ))
-            fig.add_trace(go.Scatter3d(x=valid_cp['PlateLocSide'], y=valid_cp[depth_col], z=np.zeros(len(valid_cp)), mode='markers', marker=dict(color='rgba(0,0,0,0.15)', size=5), hoverinfo='skip', showlegend=False))
+            # Drop shadow indicator on the ground
+            fig.add_trace(go.Scatter3d(x=valid_cp['Side'], y=valid_cp['Depth'], z=np.zeros(len(valid_cp)), mode='markers', marker=dict(color='rgba(0,0,0,0.3)', size=6), hoverinfo='skip', showlegend=False))
 
     fig.update_layout(
-        scene=dict(xaxis=dict(title='Side (ft)', range=[-2.5, 2.5], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), yaxis=dict(title='Depth (ft)', range=[-1, 3], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), zaxis=dict(title='Height (ft)', range=[0, 4.5], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), aspectmode='manual', aspectratio=dict(x=1.2, y=1.2, z=0.9), camera=dict(eye=dict(x=1.2, y=-1.5, z=0.8))),
+        scene=dict(xaxis=dict(title='Side to Side (ft)', range=[-3, 3], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), yaxis=dict(title='Depth: Catcher ⬅️ Pitcher (ft)', range=[-1, 4], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), zaxis=dict(title='Height (ft)', range=[0, 5], gridcolor='#E2E8F0', backgroundcolor='#F8FAFC', showbackground=True), aspectmode='manual', aspectratio=dict(x=1.2, y=1.2, z=0.9), camera=dict(eye=dict(x=1.4, y=-1.6, z=0.8))),
         margin=dict(l=0, r=0, b=0, t=0), paper_bgcolor='rgba(0,0,0,0)'
     )
     return fig
@@ -408,10 +417,12 @@ sidebar = html.Div([
     
     dbc.Accordion([
         dbc.AccordionItem([
-            html.Label("Session Type", style={"fontSize": "12px"}),
-            dbc.Checklist(id="filter-session", options=[], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
+            html.Label("Session Filters", style={"fontSize": "12px"}),
+            dcc.Dropdown(id="filter-session", options=[], multi=True, style={"color": "black", "marginBottom": "10px"}),
+            html.Label("Season Filters", style={"fontSize": "12px"}),
+            dcc.Dropdown(id="filter-season", options=[], multi=True, style={"color": "black", "marginBottom": "10px"}),
             html.Label("Opponent", style={"fontSize": "12px"}),
-            dbc.Checklist(id="filter-opponent", options=[], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
+            dcc.Dropdown(id="filter-opponent", options=[], multi=True, style={"color": "black", "marginBottom": "10px"}),
             html.Label("Pitcher Hand", style={"fontSize": "12px"}),
             dbc.Checklist(id="filter-hand", options=[{"label": "Vs. RHP", "value": "Right"}, {"label": "Vs. LHP", "value": "Left"}], inline=True, style={"fontSize": "12px", "marginBottom": "10px"}),
             html.Label("Pitch Type", style={"fontSize": "12px"}),
@@ -462,19 +473,13 @@ main_content = html.Div([
         dbc.Tab(html.Div([
             dbc.Row([
                 dbc.Col([
-                    html.H4("Automated Hitter Profile Generation", style={"marginBottom": "10px", "fontWeight": "bold"}),
-                    html.P("Synthesize insights from EV, LA, and Zone optimizations.", style={"color": "#64748B"}),
-                    dbc.Button("Synthesize Report via Gemini", id="btn-ai", color="danger", className="mb-4", style={"width": "100%", "fontWeight": "bold"}),
-                    dcc.Loading(type="dot", children=html.Div(id="ai-output", style={"padding": "20px", "backgroundColor": "white", "borderRadius": "8px", "border": "1px solid #E2E8F0", "minHeight": "200px"}))
-                ], width=6),
-                dbc.Col([
                     html.H4("Executive PDF Report", style={"marginBottom": "10px", "fontWeight": "bold"}),
                     html.P("Generate a high-resolution, 6-chart vector PDF report designed for print or iPad review.", style={"color": "#64748B"}),
                     dbc.Button("Generate Professional PDF", id="btn-pdf", color="dark", className="mb-4", style={"width": "100%", "fontWeight": "bold"}),
                     dcc.Download(id="download-pdf")
                 ], width=6)
             ])
-        ], style={"padding": "30px"}), label="🧠 AI & Reporting", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
+        ], style={"padding": "30px"}), label="📄 Reporting", tab_style={"backgroundColor": "#E2E8F0", "border": "none"}, active_tab_style={"backgroundColor": "white", "color": "#0F172A", "fontWeight": "bold", "borderTop": "3px solid #D71920"}),
 
         dbc.Tab(html.Div([
             dbc.Row([
@@ -512,7 +517,8 @@ app.layout = html.Div([sidebar, main_content])
 @app.callback(
     Output('upload-output', 'children'),
     Input('upload-data', 'contents'),
-    [State('upload-session-type', 'value'), State('upload-season', 'value'), State('upload-opponent', 'value')]
+    [State('upload-session-type', 'value'), State('upload-season', 'value'), State('upload-opponent', 'value')],
+    prevent_initial_call=True
 )
 def process_upload(contents, session_type, season, opponent):
     if contents is None: return ""
@@ -520,7 +526,12 @@ def process_upload(contents, session_type, season, opponent):
     try:
         _, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
-        df_upload = pd.read_csv(io.StringIO(decoded.decode('latin1')))
+        
+        # Dual-decoder to seamlessly handle Trackman's UTF-8-BOM files
+        try:
+            df_upload = pd.read_csv(io.StringIO(decoded.decode('utf-8-sig')))
+        except:
+            df_upload = pd.read_csv(io.StringIO(decoded.decode('latin1')))
         
         cols_to_keep = [
             'PitchNo', 'Date', 'Time', 'Pitcher', 'Batter', 'BatterSide', 'PitcherThrows',
@@ -530,13 +541,24 @@ def process_upload(contents, session_type, season, opponent):
             'KorBB', 'Balls', 'Strikes', 'RelSpeed', 'InducedVertBreak', 'HorzBreak', 'VertApprAngle'
         ]
         available_cols = [c for c in cols_to_keep if c in df_upload.columns]
-        df_cleaned = df_upload[available_cols]
+        df_cleaned = df_upload[available_cols].copy()
+        
+        # Force critical batted ball metrics to be pure floats 
+        numeric_cols = ['ExitSpeed', 'Angle', 'Direction', 'Distance', 'PlateLocHeight', 'PlateLocSide', 'ContactPositionX', 'ContactPositionY', 'ContactPositionZ']
+        for col in numeric_cols:
+            if col in df_cleaned.columns:
+                df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
         
         df_cleaned['SessionType'] = session_type
         df_cleaned['Season'] = season if season else "Unspecified"
         df_cleaned['Opponent'] = opponent if opponent else "Unspecified"
         
         conn = sqlite3.connect(DB_NAME)
+        existing_dates = pd.read_sql("SELECT DISTINCT Date FROM trackman_data", conn)['Date'].tolist()
+        if not df_cleaned.empty and str(df_cleaned['Date'].iloc[0]) in existing_dates:
+            conn.close()
+            return "Session already exists in database."
+
         df_cleaned.to_sql('trackman_data', conn, if_exists='append', index=False)
         conn.close()
         return f"✅ Data ingested successfully ({session_type})."
@@ -600,25 +622,26 @@ def update_hitters(_1, _2):
 
 @app.callback(
     [Output('date-dropdown', 'options'), Output('date-dropdown', 'value'),
-     Output('filter-session', 'options'), Output('filter-opponent', 'options'),
+     Output('filter-session', 'options'), Output('filter-season', 'options'), Output('filter-opponent', 'options'),
      Output('filter-pitch', 'options'), Output('filter-result', 'options'),
      Output('filter-call', 'options')],
     Input('hitter-dropdown', 'value')
 )
 def update_filters(hitter):
-    if not hitter: return [], None, [], [], [], [], []
+    if not hitter: return [], None, [], [], [], [], [], []
     conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql(f"SELECT DISTINCT Date, SessionType, Opponent, TaggedPitchType, PlayResult, PitchCall FROM trackman_data WHERE Batter = '{hitter}'", conn)
+    df = pd.read_sql(f"SELECT DISTINCT Date, SessionType, Season, Opponent, TaggedPitchType, PlayResult, PitchCall FROM trackman_data WHERE Batter = '{hitter}'", conn)
     conn.close()
     
     dates = ["All-Time"] + sorted(df['Date'].dropna().unique().tolist(), reverse=True)
     sessions = [{'label': s, 'value': s} for s in sorted(df['SessionType'].dropna().unique().tolist())]
+    seasons = [{'label': s, 'value': s} for s in sorted(df['Season'].dropna().unique().tolist())]
     opponents = [{'label': o, 'value': o} for o in sorted(df['Opponent'].dropna().unique().tolist())]
     pitches = [{'label': p, 'value': p} for p in sorted(df['TaggedPitchType'].dropna().unique().tolist())]
     results = [{'label': r, 'value': r} for r in sorted(df['PlayResult'].dropna().unique().tolist())]
     calls = [{'label': c, 'value': c} for c in sorted(df['PitchCall'].dropna().unique().tolist())]
     
-    return [{'label': d, 'value': d} for d in dates], "All-Time", sessions, opponents, pitches, results, calls
+    return [{'label': d, 'value': d} for d in dates], "All-Time", sessions, seasons, opponents, pitches, results, calls
 
 @app.callback(
     [Output('dashboard-header', 'children'), Output('kpi-grid', 'children'), 
@@ -627,12 +650,12 @@ def update_filters(hitter):
      Output('2d-ev-sz', 'figure'), Output('2d-la-sz', 'figure'),
      Output('batting-line-table', 'children'), Output('data-table-container', 'children')],
     [Input('hitter-dropdown', 'value'), Input('date-dropdown', 'value'),
-     Input('filter-session', 'value'), Input('filter-opponent', 'value'),
+     Input('filter-session', 'value'), Input('filter-season', 'value'), Input('filter-opponent', 'value'),
      Input('filter-hand', 'value'), Input('filter-pitch', 'value'),
      Input('filter-result', 'value'), Input('filter-call', 'value'),
      Input('filter-count', 'value')]
 )
-def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results, calls, counts):
+def update_dashboard(hitter, date, sessions, seasons, opponents, hands, pitches, results, calls, counts):
     if not hitter: return dash.no_update, dash.no_update, go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), "", ""
     
     conn = sqlite3.connect(DB_NAME)
@@ -642,6 +665,7 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
     
     if date and date != "All-Time": df = df[df['Date'] == date]
     if sessions: df = df[df['SessionType'].isin(sessions)]
+    if seasons: df = df[df['Season'].isin(seasons)]
     if opponents: df = df[df['Opponent'].isin(opponents)]
     if hands: df = df[df['PitcherThrows'].isin(hands)]
     if pitches: df = df[df['TaggedPitchType'].isin(pitches)]
@@ -652,7 +676,10 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
         df = df[df['CountStr'].isin(counts)]
 
     batted_balls = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
-    if batted_balls.empty: return html.H3("No Batted Ball Data for Selection", style={"padding": "20px"}), "", go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), "", ""
+    
+    if batted_balls.empty:
+        empty_header = html.Div([html.H1(hitter.upper(), style={"fontSize": "42px", "fontWeight": "900", "margin": 0}), html.Div("NO BATTED BALL EVENTS FOUND FOR CURRENT FILTERS", style={"fontSize": "15px", "fontWeight": "600", "color": "#D71920"})])
+        return empty_header, "", go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), go.Figure(), "", ""
 
     side = get_batter_side(df['BatterSide'].iloc[0] if 'BatterSide' in df.columns else "UNK")
     total_swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging', 'FoulBallFieldable', 'FoulBallNotFieldable'])])
@@ -709,54 +736,13 @@ def update_dashboard(hitter, date, sessions, opponents, hands, pitches, results,
     return header, kpi_cards, fig_field, fig_zone, fig_ev_field, fig_la_field, fig_ev_sz, fig_la_sz, bl_table, raw_table
 
 @app.callback(
-    Output("ai-output", "children"),
-    Input("btn-ai", "n_clicks"),
-    [State("hitter-dropdown", "value"), State("date-dropdown", "value"),
-     State('filter-session', 'value'), State('filter-opponent', 'value')],
-    prevent_initial_call=True
-)
-def generate_ai_report(n_clicks, hitter, date, sessions, opponents):
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key: return html.Div("API Key not found in Environment Variables on Render.", style={"color": "red"})
-    
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        query = f"SELECT * FROM trackman_data WHERE Batter = '{hitter}'"
-        df = pd.read_sql(query, conn)
-        conn.close()
-        
-        if date and date != "All-Time": df = df[df['Date'] == date]
-        if sessions: df = df[df['SessionType'].isin(sessions)]
-        if opponents: df = df[df['Opponent'].isin(opponents)]
-        
-        bip_df = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
-        bip_df['SZ_Zone'] = bip_df.apply(lambda r: assign_sz_zone(r['PlateLocSide'], r['PlateLocHeight']), axis=1)
-        bip_df['Field_Zone'] = bip_df.apply(lambda r: assign_field_zone(r['Distance'], r['Direction']), axis=1)
-        
-        swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging'])])
-        bip = len(bip_df)
-        avg_ev, max_ev, ev90 = bip_df['ExitSpeed'].mean(), bip_df['ExitSpeed'].max(), np.percentile(bip_df['ExitSpeed'], 90)
-        swsp_pct = (len(bip_df[(bip_df['Angle'] >= 8) & (bip_df['Angle'] <= 32)]) / bip) * 100 if bip > 0 else 0
-        avg_la, std_la = bip_df['Angle'].mean(), bip_df['Angle'].std()
-        zone_evs = bip_df.groupby('SZ_Zone')['ExitSpeed'].mean().round(1).to_dict()
-        field_evs = bip_df.groupby('Field_Zone')['ExitSpeed'].mean().round(1).to_dict()
-
-        client = genai.Client(api_key=key)
-        prompt = f"Act as the Omaha Mavericks D1 baseball hitting coordinator. Write a professional scouting report for {hitter}.\nSESSION: Swings: {swings}, BIP: {bip}\nAvg EV: {avg_ev:.1f}, 90th% EV: {ev90:.1f}, Max EV: {max_ev:.1f}\nSweet Spot %: {swsp_pct:.1f}%\nAvg LA: {avg_la:.1f}° (StdDev: {std_la:.1f}°)\nStrike Zone EVs: {zone_evs}\nField Quadrant EVs: {field_evs}\n\nFORMAT AS MARKDOWN. Analyze EV90 vs Max EV, LA StdDev (consistency), Plate approach based on zone EVs, and field spray dominance. Give one actionable development directive."
-        
-        response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-        return dcc.Markdown(response.text)
-    except Exception as e:
-        return html.Div(f"API Error: {str(e)}", style={"color": "red"})
-
-@app.callback(
     Output("download-pdf", "data"),
     Input("btn-pdf", "n_clicks"),
     [State("hitter-dropdown", "value"), State("date-dropdown", "value"),
-     State('filter-session', 'value'), State('filter-opponent', 'value')],
+     State('filter-session', 'value'), State('filter-season', 'value'), State('filter-opponent', 'value')],
     prevent_initial_call=True
 )
-def download_pdf(n_clicks, hitter, date, sessions, opponents):
+def download_pdf(n_clicks, hitter, date, sessions, seasons, opponents):
     conn = sqlite3.connect(DB_NAME)
     query = f"SELECT * FROM trackman_data WHERE Batter = '{hitter}'"
     df = pd.read_sql(query, conn)
@@ -764,12 +750,13 @@ def download_pdf(n_clicks, hitter, date, sessions, opponents):
     
     if date and date != "All-Time": df = df[df['Date'] == date]
     if sessions: df = df[df['SessionType'].isin(sessions)]
+    if seasons: df = df[df['Season'].isin(seasons)]
     if opponents: df = df[df['Opponent'].isin(opponents)]
     
     batted_balls = df.dropna(subset=['ExitSpeed', 'Angle', 'Direction', 'Distance'])
     side = get_batter_side(df['BatterSide'].iloc[0] if 'BatterSide' in df.columns else "UNK")
     
-    swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging'])])
+    swings = len(df[df['PitchCall'].isin(['InPlay', 'Foul', 'StrikeSwinging', 'FoulBallFieldable', 'FoulBallNotFieldable'])])
     bip = len(batted_balls)
     kpis = [
         ("SWINGS", swings), ("HARD HIT %", f"{(len(batted_balls[batted_balls['ExitSpeed'] >= 95]) / bip * 100):.1f}%" if bip else "0%"), ("SWEET SPOT %", f"{(len(batted_balls[(batted_balls['Angle'] >= 8) & (batted_balls['Angle'] <= 32)]) / bip * 100):.1f}%" if bip else "0%"),
